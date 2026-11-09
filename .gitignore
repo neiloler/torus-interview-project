@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+.idea/
+# Generated data; only the sample is committed.
+data/*.json
+!data/sample.json
