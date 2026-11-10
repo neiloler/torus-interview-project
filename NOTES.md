@@ -2,10 +2,33 @@
 
 ## Scope and status
 
-This work focuses on Tier 1. The first commit documents the requirements and
-adds tests while `summarize` is still unimplemented. A separate implementation
-commit will follow. Tiers 2 and 3 are deferred so this increment can be reviewed
-and verified independently.
+Tier 1 is complete. The first commit documents the requirements and adds tests
+while `summarize` is still unimplemented. The second implements `summarize` and
+records the passing checks. Tiers 2 and 3 are deferred so this increment can be
+reviewed and verified independently.
+
+## Implementation choices
+
+`summarize` makes one pass in arrival order. Each device has a set of seen
+sequences, a maximum accepted timestamp, and a map of window aggregates.
+Sequences are recorded before validity and lateness checks. Only accepted
+readings update timestamps and aggregates. Summaries are created after the pass
+and sorted without mutating the input.
+
+Aggregates store count, sum, min, and max rather than individual readings.
+Average is sum/count using JavaScript numbers, without rounding. Extreme custom
+ranges or input sizes could overflow the sum; compensated or overflow-resistant
+arithmetic is outside this exercise increment.
+
+With typical constant-time map/set operations, processing takes O(n + w log w)
+time and O(s + w) extra memory, where n is input readings, s is distinct
+device/sequence pairs, and w is populated windows. Duplicate history grows with
+input size, which is allowed for Tier 1, not a streaming memory guarantee.
+
+Types stay local to `summarize.ts`; no shared helper layer is introduced before
+there is a second implemented caller. Public exports/signatures, dependencies,
+and CLI behavior are unchanged. Type aliases, annotations, and type-only imports
+are erasable; no enums, namespaces, or constructor parameter properties are used.
 
 ## Tier 1 coverage review
 
@@ -54,6 +77,11 @@ Before implementation, `npm test` on Node v22.23.2 discovers 31 tests (14 origin
 and 17 added). All 31 fail with `not implemented`, as expected for the first
 commit. `git diff --check` passes.
 
+After implementation, all 31 tests pass without changing the tests from the
+first commit. `npm start` succeeds and prints 15 sample window summaries.
+`git diff --check` passes. Node executes the TypeScript directly; these commands
+verify execution, not static type checking.
+
 ## AI use and preparation
 
 Codex assisted with interpreting the brief, discussing tradeoffs, proposing a
@@ -68,8 +96,7 @@ configuration files have been introduced in this increment.
 
 ## Next steps
 
-Implement Tier 1 and run the complete tests plus the sample CLI. After this
-increment, consider shared acceptance logic for gap detection. Streaming needs
+After this increment, consider shared acceptance logic for gap detection. Streaming needs
 an explicit duplicate-retention and memory argument: the specification does not
 bound device count, reading density, or invalid future timestamps. Percentile
 support also requires an explicit convention and memory tradeoff.

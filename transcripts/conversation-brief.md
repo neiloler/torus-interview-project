@@ -56,3 +56,13 @@ The user requested this brief in the suggested repository folder, ongoing
 
 Work on later tiers is not part of these two commits. A reviewed full session
 transcript remains a final-submission task; this brief does not replace it.
+
+## Implementation follow-through
+
+- Added 17 tests to the 14 existing tests and documented the coverage mapping in
+  `NOTES.md`. All 31 initially failed with the expected `not implemented` error.
+- Committed tests and documentation before modifying the implementation.
+- Implemented the previously discussed single-pass approach. All 31 tests then
+  passed without test changes; the sample CLI printed 15 summaries successfully.
+- Updated notes with implementation choices, complexity, validation results,
+  assumptions, and deferred work for the second commit.
