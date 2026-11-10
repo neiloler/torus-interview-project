@@ -9,7 +9,8 @@ shared utility extraction and a separate commit with 12 initially failing gap
 tests. Streaming is now implemented with configurable retained-state limits;
 all 65 tests pass. Inputs that exceed those limits fail explicitly, which is a
 documented qualification of Tier 2's full-input equivalence requirement.
-Tier 3 remains deferred.
+Tier 3 now has an agreed histogram-based p95 design. Its documentation and tests
+are separate commits; percentile implementation is still pending.
 
 ## Implementation choices
 
@@ -324,4 +325,91 @@ mock, checking cleanup boundaries, stalled/invalid-only input, future invalid
 records, global capacity, quiet devices, terminal errors, and release on end.
 Heap-size assertions are avoided because garbage collection makes them noisy.
 
-Percentile support remains deferred with its own definition and memory tradeoff.
+## Tier 3 decision: approximate p95
+
+### Why a histogram
+
+Use a fixed-width histogram rather than retaining all accepted values for an
+exact percentile. Exact storage grows with readings per window. A histogram
+stores one count per bucket regardless of reading count, making its memory cost
+predictable. The user considers an error of roughly +/-0.5 to +/-0.1 value units
+a worthwhile tradeoff for the memory savings. Approximation is explicitly
+permitted by the README.
+
+Count every accepted reading; do not randomly sample. Continue using the
+existing per-device tumbling windows and final-only streaming API. `push`
+returns finalized windows exactly once, and `end` flushes what remains. No
+provisional percentile events or rolling windows are introduced.
+
+### Calculation contract for the upcoming implementation
+
+- Add optional `p95?: number` to `WindowSummary`; both `summarize` and successful
+  streaming summaries populate it for every nonempty window.
+- Define exact reference p95 by nearest rank: sorted value at one-based position
+  `ceil(0.95 * count)`. Interpolation is not used.
+- Add optional `Config.p95BucketCount`, default 825. Allow integer counts from
+  1 through 65,536; the upper bound limits a single counter array to 512 KiB.
+  These defaults are design choices, not measured hardware limits.
+- Split `validRange` into equal-width buckets, with inclusive lower boundaries,
+  exclusive upper boundaries, and the final bucket including the valid maximum.
+  Place internal boundary values in the bucket starting at that boundary.
+- Find the first bucket whose cumulative count reaches the nearest rank. Return
+  its midpoint clamped to the window's observed minimum/maximum. Single-valued
+  windows therefore return that value exactly, including range endpoints.
+- A zero-width valid range returns its only valid value exactly. Require finite,
+  ordered range endpoints and a finite span for percentile calculation. Account
+  for floating-point bucket arithmetic and reject configurations whose bucket
+  width cannot be represented as positive when the span is nonzero.
+- Use eight-byte numeric counters and guard against loss of integer count
+  precision. Only accepted readings update counts; expiry of duplicate records
+  must never subtract values from the still-open window histogram.
+
+### Accuracy and memory
+
+For range width R and B buckets, bucket width is R/B. The exact nearest-rank p95
+lies in the selected bucket. Its distance from the midpoint is at most R/(2B);
+clamping to observed min/max cannot worsen that bound. This is a deterministic
+absolute-value error bound, subject to floating-point roundoff, not a guarantee
+about percentile-rank error. It is independent of sample count or distribution.
+
+For the default range [-40, 125], R = 165:
+
+| Buckets | Maximum absolute error | Counter bytes per window |
+| --- | --- | --- |
+| 165 | 0.5 | 1,320 |
+| 825 (default) | 0.1 | 6,600 |
+| 1,650 | 0.05 | 13,200 |
+
+Eight-byte exact-value storage would use 8*n bytes for n readings, before other
+overhead. At 100,000 readings in each of 2,000 windows, exact raw values occupy
+about 1.49 GiB versus about 12.59 MiB of 825-bucket counters. Exact storage can
+be smaller for windows with fewer readings than histogram buckets; the decision
+prioritizes predictable worst-case storage for busy windows.
+
+Add `streamLimits.maxHistogramBytes`, default 16 MiB, to cap total retained
+counter-array bytes across open windows. It must be a positive safe integer;
+even a budget smaller than one histogram is valid but the first accepted window
+will fail. Before allocating a new histogram, close eligible windows and free
+their histogram storage, then check budget. Updating an existing window needs
+no additional array. Rejected readings allocate no histogram. Exceeding budget
+uses the existing terminal `StreamLimitError` behavior with limit name
+`maxHistogramBytes`, including release of all state. `end()` also frees arrays.
+
+An internal `retainedCounts().histogramBytes` diagnostic will sum actual retained
+counter-array byte lengths for tests; it is not added to the public Stream API.
+The budget covers retained counter arrays, not process heap, runtime overhead,
+temporary allocation/GC delays, device-ID strings, or caller-owned output.
+Batch summarization remains an in-memory batch API, without a total-memory cap.
+
+### Test-first implementation plan
+
+1. Commit this decision and the conversation summary before changing tests.
+2. Commit tests for explicit percentile examples, the theoretical error bound
+   against independently sorted values, bucket/range endpoints, configuration,
+   acceptance rules, independent windows/devices, and final-only streaming.
+3. Include tests for constant histogram size as reading count grows, allocation
+   only for accepted windows, budget reuse after closure, quiet devices sharing
+   the budget, and release on end or failure. Test existing metric fields
+   independently so adding p95 does not obscure count/min/max/average regressions.
+4. Implement the percentile in a later commit. Preserve the original API call
+   signatures and the documented resource-limit qualifications.

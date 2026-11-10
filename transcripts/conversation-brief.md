@@ -142,3 +142,20 @@ transcript remains a final-submission task; this brief does not replace it.
   equivalence for three generated datasets. The sample CLI also succeeds.
 - Documented that count caps do not guarantee a process-wide RAM limit and that
   device-ID length, runtime overhead, and caller allocations still matter.
+
+## Tier 3 percentile decision
+
+- Explained p95 using the nearest-rank convention and distinguished rolling
+  windows from the README's fixed tumbling windows. Confirmed that streaming
+  returns each finalized window once, rather than provisional percentile updates.
+- Compared exact value retention with a fixed-size histogram. With B buckets
+  over range width R, a midpoint estimate has absolute-value error at most
+  R/(2B), apart from floating-point roundoff. Counts use fixed storage per window.
+- The user chose approximation because predictable memory usage is more
+  valuable here than exactness, accepting roughly +/-0.5 to +/-0.1 value units.
+- Selected 825 default buckets for +/-0.1 over [-40, 125], with configurable
+  bucket count and a planned 16 MiB total streaming histogram budget. Recorded
+  clamping, boundary rules, memory qualifications, and pending implementation
+  details in `NOTES.md`.
+- The user requested two commits in this step: documentation first, then the
+  percentile test suites. Actual percentile implementation is deferred.
