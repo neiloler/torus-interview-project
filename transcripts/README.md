@@ -22,3 +22,15 @@ Use the tool's export feature if it has one, or copy the conversation into a tex
 - **Cursor, Copilot Chat, and similar:** export the chat from the chat panel, or copy and paste it.
 
 Any readable format is fine.
+
+## This submission's records
+
+- [Conversation transcript](conversation-transcript.md): the saved user/assistant
+  dialogue, including progress updates, candid questions, errors, and corrections.
+  Its introduction explains the export boundary and limited formatting/privacy edits.
+- [Independent reviewer reports](reviewer-reports.md): original final reports from
+  the Tier 2 contract reviewer and both final reviewers, including their caveats.
+- [Agent prompt snapshots](agent-prompts.md): the explicitly loaded installer and
+  grilling prompts used during the session, archived as reference text.
+- [Conversation brief](conversation-brief.md): the earlier running summary, retained
+  separately so it is not mistaken for the dialogue transcript.

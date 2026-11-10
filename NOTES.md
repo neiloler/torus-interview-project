@@ -131,15 +131,36 @@ aggregate or its histogram. `npm start` prints 15 summaries including p95;
 
 ## AI use and preparation
 
-Codex assisted with interpreting the brief, discussing tradeoffs, proposing a
-Tier 1 implementation in chat, and reviewing test coverage. The conversation
-included preparation before implementation; this is not a claim that all work
-occurred within one timed hour.
+Codex helped interpret the brief, discussed tradeoffs, wrote implementation and
+tests across all three tiers at the user's direction, and performed verification
+and Git operations. The user drove the questions, priorities, memory policy,
+approximation decision, commit sequencing, and request for independent review.
+This was substantial AI assistance, not just autocomplete or proofreading.
 
-See `transcripts/conversation-brief.md` for a summarized record. It is not a full
-session transcript. Before final submission, export and review the relevant
-session transcript as requested by the README/email. No project-specific agent
-configuration files have been introduced in this increment.
+The recorded conversation spans multiple hours of elapsed time, including gaps
+between messages and preparation before implementation. No separate active-work
+timer was recorded in this session; this is not presented as a one-hour completion.
+
+`transcripts/conversation-transcript.md` contains the saved user/assistant dialogue
+from the initial README discussion through the request to export it. It preserves
+the initial one-hour expectation, AI-written code, mistaken memory-test assertion,
+API corrections, capacity-limit qualifications, reviewer scores, and discovered
+fractional-window bug. Earlier statements have not been rewritten after the fix.
+The existing `transcripts/conversation-brief.md` remains a summary, not a substitute
+for that dialogue.
+
+`transcripts/reviewer-reports.md` preserves the three subagents' final reports;
+the final-review scores of 88/100 and 86/100 predate the bug fix and transcript
+export. `transcripts/agent-prompts.md` archives the explicitly invoked installer
+and grilling skill prompts. No project-specific AGENTS.md, CLAUDE.md, or .cursor
+configuration was used.
+
+The export was checked against the saved messages and reviewed by Codex before
+committing. Local paths were replaced with portable links/placeholders and trailing
+whitespace normalized. Tool execution records, runtime instructions, and internal
+reasoning are omitted; the export states this scope explicitly. No substantive
+dialogue was removed to make the work appear better. This does not claim that the
+user has independently reviewed the exported files or sent the submission email.
 
 ## Tier 2 decisions and plan
 

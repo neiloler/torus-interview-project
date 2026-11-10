@@ -204,3 +204,19 @@ transcript remains a final-submission task; this brief does not replace it.
 - Added explanatory source comments and implementation notes, plus one focused
   test for the shared helper. All 90 tests and the sample CLI pass. The full
   transcript export/review remains a separate submission task.
+
+## Transcript export
+
+- The user requested an honest transcript, explicitly preferring an accurate
+  account of both successes and mistakes over a polished impression.
+- Exported 130 saved dialogue messages (41 user messages and 89 assistant
+  messages, including progress updates) through that request. Earlier responses
+  are preserved rather than rewritten to reflect later corrections.
+- Added the three independent reviewers' final reports and the explicitly loaded
+  skill prompt snapshots. Reviewer scores remain their original pre-fix scores.
+- Verified the exported dialogue against the saved messages, reviewed contents,
+  normalized local paths/links and trailing whitespace, and checked credential
+  patterns. The export explicitly omits tool logs and internal runtime material.
+- Updated NOTES to describe the substantial AI assistance and elapsed-time
+  limitations candidly. This export completes the previously pending dialogue
+  transcript artifact; it does not claim a user review or email submission occurred.
