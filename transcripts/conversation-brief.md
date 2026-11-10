@@ -108,3 +108,14 @@ transcript remains a final-submission task; this brief does not replace it.
 - Kept production code and the existing tests unchanged. `npm test` reports
   34 passing tests and 12 gap tests failing with the expected `not implemented`
   error. Implementation is reserved for the next commit.
+
+## Gap-reporting implementation
+
+- The user requested implementing a solution against the committed tests.
+- Implemented `detectGaps` with shared acceptance and device-ID comparison.
+  It filters in arrival order, stores accepted timestamps per device, sorts
+  those timestamps, and reports consecutive differences greater than `gapMs`.
+- All 46 tests pass without test changes. The sample CLI and whitespace check
+  also pass. Updated `NOTES.md` to record completion and validation.
+- Gap detection retains batch memory costs: O(n) extra storage and O(n log n)
+  worst-case time. Streaming and its unresolved memory policy remain separate.

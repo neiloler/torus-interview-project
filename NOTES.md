@@ -4,10 +4,10 @@
 
 Tier 1 is complete. Its first commit documents the requirements and adds tests
 while `summarize` is still unimplemented. Its second implements `summarize` and
-records the passing checks. The first Tier 2 preparation step now extracts shared
-utilities and tests them independently. Gap detection now has a test-first
-commit with 12 failing tests; implementation is next. Neither Tier 2 function is
-implemented yet. Streaming design and Tier 3 remain deferred.
+records the passing checks. Tier 2 gap detection is also complete, following
+shared utility extraction and a separate commit with 12 initially failing gap
+tests. All 46 tests now pass. Streaming is still unimplemented, and its memory
+policy remains an open design decision. Tier 3 remains deferred.
 
 ## Implementation choices
 
@@ -90,10 +90,15 @@ After shared utility extraction, `npm test` passes all 34 tests: the unchanged
 31 Tier 1 tests and one test for each of the three utilities. `npm start` still
 prints 15 sample summaries, and `git diff --check` passes.
 
-At the gap-test checkpoint, `npm test` discovers 46 tests: the existing 34 pass,
-and the 12 new gap tests fail with `not implemented`. This failure is deliberate:
-`src/gaps.ts` remains a stub for the next implementation commit. No existing
+At the gap-test checkpoint, `npm test` discovered 46 tests: the existing 34 passed,
+and the 12 new gap tests failed with `not implemented`. That failure was deliberate:
+`src/gaps.ts` remained a stub for the next implementation commit. No existing
 tests or production code changed in the gap-test commit.
+
+After implementing `detectGaps`, all 46 tests pass without changing the test
+suite. `npm start` still prints 15 sample window summaries, and `git diff --check`
+passes. The CLI remains a summary display; gap reporting is available through
+the existing `detectGaps` export.
 
 ## AI use and preparation
 
@@ -147,7 +152,7 @@ mean adopting the permanent batch `Set` unchanged. Keep aggregation in
 `summarize` until streaming provides a second caller. Do not build a generic
 storage interface before the streaming design needs one.
 
-### Gap detection algorithm and tests
+### Gap detection implementation and tests
 
 1. Visit readings in arrival order through shared acceptance logic.
 2. Store only accepted timestamps, grouped by device. Summary aggregates cannot
@@ -157,6 +162,12 @@ storage interface before the streaming design needs one.
    `end - start > gapMs`. Equality is not a gap; repeated timestamps add no gap.
 5. Sort output by plain string device ID, then numeric start. Preserve inputs
    and existing public signatures/exports.
+
+`src/gaps.ts` now implements these steps using `acceptReading` and
+`compareDeviceIds`. Each call owns its acceptance map, timestamp arrays, and
+output array. The only sorted input-derived collections are newly allocated
+timestamp arrays; the caller's readings are never sorted or modified. No new
+dependencies or additional utilities were needed.
 
 Use a small set of public `detectGaps` tests for empty/single/invalid-only input,
 threshold equality and just above it, out-of-order accepted readings that split
@@ -196,7 +207,7 @@ processing.
    preserving change separate so regressions can be traced to the refactor.
 2. **Completed:** Add the gap detection tests while `detectGaps` is still a stub. Confirm that
    new gap tests fail for the expected reason and existing tests still pass.
-3. Implement gap detection and update these notes. Run `npm test`, the sample
+3. **Completed:** Implement gap detection and update these notes. Run `npm test`, the sample
    CLI, and `git diff --check` before committing.
 
 ### Streaming design checkpoint (before implementation)
