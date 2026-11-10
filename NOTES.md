@@ -4,8 +4,9 @@
 
 Tier 1 is complete. The first commit documents the requirements and adds tests
 while `summarize` is still unimplemented. The second implements `summarize` and
-records the passing checks. Tiers 2 and 3 are deferred so this increment can be
-reviewed and verified independently.
+records the passing checks. Tier 2 is now in design, with gap detection first
+and streaming second. Neither Tier 2 function is implemented yet. Tier 3 remains
+deferred.
 
 ## Implementation choices
 
@@ -94,9 +95,101 @@ session transcript. Before final submission, export and review the relevant
 session transcript as requested by the README/email. No project-specific agent
 configuration files have been introduced in this increment.
 
-## Next steps
+## Tier 2 decisions and plan
 
-After this increment, consider shared acceptance logic for gap detection. Streaming needs
-an explicit duplicate-retention and memory argument: the specification does not
-bound device count, reading density, or invalid future timestamps. Percentile
-support also requires an explicit convention and memory tradeoff.
+### Decisions agreed during planning
+
+- Complete gap detection before streaming.
+- Extract common behavior into small, independently testable functions.
+- Aim for one concise test per utility, with a small case table where useful.
+  More than one test, or a test longer than a few dozen lines, is a strong signal
+  to review whether the function has multiple responsibilities. It is a design
+  signal, not a reason to omit boundary cases or fragment a coherent state change.
+- Treat memory exhaustion as a major failure mode. Establish streaming retention
+  rules and a defensible bound before implementing or claiming bounded memory.
+- Continue documenting assumptions, validation, and deliberate omissions here.
+
+### Proposed shared functions
+
+| Function | Responsibility | Initial users and focused test |
+| --- | --- | --- |
+| `isValidValue` | Check finite numeric value and inclusive configured range; narrow the value type | Acceptance logic; compact table of invalid categories and range boundaries |
+| `acceptReading` | Apply per-device duplicate/lateness rules and update acceptance state in the required order | Summaries and gaps; a short arrival sequence covering invalid-first resends, accepted-time advancement, and lateness |
+| `compareDeviceIds` | Plain string comparison | Summary and gap output ordering; a short mixed-case comparison table |
+
+Names and file placement are provisional. Acceptance state must be owned by
+each invocation, never global. Batch acceptance can keep full sequence history.
+Streaming will need a deliberate retention policy; sharing the rules does not
+mean adopting the permanent batch `Set` unchanged. Keep aggregation in
+`summarize` until streaming provides a second caller. Do not build a generic
+storage interface before the streaming design needs one.
+
+### Gap detection algorithm and tests
+
+1. Visit readings in arrival order through shared acceptance logic.
+2. Store only accepted timestamps, grouped by device. Summary aggregates cannot
+   reconstruct gaps because they discard the individual timestamps.
+3. Sort each device's newly allocated timestamp array numerically.
+4. Compare consecutive timestamps. Emit `{ deviceId, start, end }` only when
+   `end - start > gapMs`. Equality is not a gap; repeated timestamps add no gap.
+5. Sort output by plain string device ID, then numeric start. Preserve inputs
+   and existing public signatures/exports.
+
+Use a small set of public `detectGaps` tests for empty/single/invalid-only input,
+threshold equality and just above it, out-of-order accepted readings that split
+a would-be gap, rejected readings that must not split a gap, independent devices
+and output ordering, and input immutability. Keep the 31 Tier 1 tests unchanged
+as regression coverage. Utility tests target shared behavior; gap tests target
+how accepted timestamps become output, rather than repeating every value case.
+
+This is a batch API: its extra memory remains O(n) in the worst case for seen
+sequences and accepted timestamps; worst-case time is O(n log n), including
+sorting. Store timestamps rather than copies of full reading objects. Do not
+describe gap detection or the existing whole-file CLI as bounded-memory input
+processing.
+
+### Proposed implementation commits
+
+1. Extract acceptance and ordering helpers, add their focused tests, and refactor
+   `summarize` to use them. All Tier 1 tests must remain green. Keep this behavior-
+   preserving change separate so regressions can be traced to the refactor.
+2. Add the gap detection tests while `detectGaps` is still a stub. Confirm that
+   new gap tests fail for the expected reason and existing tests still pass.
+3. Implement gap detection and update these notes. Run `npm test`, the sample
+   CLI, and `git diff --check` before committing.
+
+### Streaming design checkpoint (before implementation)
+
+For a device whose newest accepted timestamp is M, let C = M - maxLatenessMs.
+
+- A window can be emitted when `windowStart + windowMs <= C`.
+- A duplicate record can be forgotten only once its timestamp is strictly less
+  than C: a resend has the same timestamp and must then be rejected as too late.
+  Records at C must remain remembered because equality is still admissible.
+- Invalid readings never advance M. Invalid future readings still need duplicate
+  history until the accepted cutoff passes them.
+- Quiet devices retain their open windows until `end()`; another device cannot
+  close their windows.
+
+These rules limit retained history by timestamp only, not by number of records.
+The written contract permits unlimited distinct sequences at one timestamp,
+unlimited devices, and invalid-only input without accepted-time progress. Exact
+duplicate detection therefore has no useful unconditional fixed memory bound
+under the stated assumptions. Sequence monotonicity is not guaranteed either.
+
+Before streaming code, decide which input/resource assumptions can be justified,
+how they would be enforced, and what happens when they are exceeded. A hard cap
+with an explicit error would change the currently specified behavior and is an
+option to discuss, not an approved design. Silently forgetting still-relevant
+records would produce incorrect results. No additional assumptions or caps have
+been adopted yet.
+
+Once the policy is settled, document the bound in terms of devices, retained
+sequence records, and open windows. Design a test-only state-size observation
+mechanism and tests for long-running progress, stalled time, invalid future
+readings, duplicate eviction boundaries, and quiet devices. Also settle repeated
+`end()` and `push()` after `end()`, which the README leaves unspecified.
+
+Planning is recorded here; this does not authorize an implementation of the
+unresolved streaming policy. Percentile support remains a later decision with
+its own definition and memory tradeoff.

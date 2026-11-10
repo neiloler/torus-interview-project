@@ -66,3 +66,21 @@ transcript remains a final-submission task; this brief does not replace it.
   passed without test changes; the sample CLI printed 15 summaries successfully.
 - Updated notes with implementation choices, complexity, validation results,
   assumptions, and deferred work for the second commit.
+
+## Tier 2 planning
+
+- After Tier 1 was merged and pushed, the user invoked `grill-me` to discuss
+  architecture. Its `grilling` companion guided a first round of questions.
+  A read-only sub-agent checked the repository contracts and memory constraints.
+- The user chose gap detection first, followed by streaming.
+- The user requested small shared utilities with individual tests, using more
+  than one test or a test longer than a few dozen lines as a strong indicator
+  that the utility may need to be divided further.
+- The user emphasized that memory exhaustion could be fatal and must be treated
+  as an especially important design concern for streaming.
+- Recorded a proposed plan in `NOTES.md`: extract and test shared acceptance and
+  ordering behavior, add gap tests, then implement gaps in separate commits.
+- Identified that timestamp-based duplicate eviction alone does not bound record
+  count. Streaming assumptions, enforcement, and behavior on exceeding resource
+  limits remain open decisions. No Tier 2 implementation was made during this
+  planning step.
