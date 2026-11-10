@@ -119,3 +119,26 @@ transcript remains a final-submission task; this brief does not replace it.
   also pass. Updated `NOTES.md` to record completion and validation.
 - Gap detection retains batch memory costs: O(n) extra storage and O(n log n)
   worst-case time. Streaming and its unresolved memory policy remain separate.
+
+## Streaming limits and implementation
+
+- Discussed safe sequence eviction, window closure, and why stalled time,
+  invalid-only input, and unlimited devices defeat unconditional memory bounds.
+- The user asked about SQLite versus configurable limits and about mocking
+  rather than exposing debugging APIs. Recommended in-memory limits and tests
+  of the actual internal store, with only count snapshots available internally.
+- The user chose configurable limits and asked about required API compatibility.
+  Added optional `Config.streamLimits` while preserving `createStream(config)`,
+  `push(reading)`, and `end()`. Overflow produces an explicitly documented error,
+  so unconditional full-input completion is qualified rather than claimed.
+- Implemented the stream with device/sequence caps, safe expiry, immediate
+  window emission, and terminal failure that releases retained state. Shared
+  aggregation helpers keep batch and streaming statistics consistent.
+- Added separate stream behavior, memory, limit-resolution, and aggregation
+  tests. The first run caught an incorrect expectation of one open window in
+  the long-running test: lateness correctly keeps two windows open. Corrected
+  the expectation and made diagnostics count actual retained map entries.
+- All 65 tests pass, including 10,000 pushes under a one-sequence cap and batch
+  equivalence for three generated datasets. The sample CLI also succeeds.
+- Documented that count caps do not guarantee a process-wide RAM limit and that
+  device-ID length, runtime overhead, and caller allocations still matter.

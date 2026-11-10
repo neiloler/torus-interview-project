@@ -1,13 +1,7 @@
 import type { Config, Reading, WindowSummary } from './types.ts';
 import { acceptReading, type AcceptanceState } from './reading-acceptance.ts';
 import { compareDeviceIds } from './compare-device-ids.ts';
-
-type Aggregate = {
-  count: number;
-  sum: number;
-  min: number;
-  max: number;
-};
+import { addToWindow, toWindowSummary, type Aggregate } from './window-aggregation.ts';
 
 /**
  * Tier 1. Clean `readings` (given in arrival order) and summarize each
@@ -27,36 +21,14 @@ export function summarize(readings: Reading[], config: Config): WindowSummary[] 
       devices.set(deviceId, windows);
     }
 
-    const windowStart = Math.floor(ts / config.windowMs) * config.windowMs;
-    const window = windows.get(windowStart);
-
-    if (window) {
-      window.count += 1;
-      window.sum += value;
-      window.min = Math.min(window.min, value);
-      window.max = Math.max(window.max, value);
-    } else {
-      windows.set(windowStart, {
-        count: 1,
-        sum: value,
-        min: value,
-        max: value,
-      });
-    }
+    addToWindow(windows, ts, value, config.windowMs);
   }
 
   const summaries: WindowSummary[] = [];
 
   for (const [deviceId, windows] of devices) {
     for (const [windowStart, window] of windows) {
-      summaries.push({
-        deviceId,
-        windowStart,
-        count: window.count,
-        min: window.min,
-        max: window.max,
-        avg: window.sum / window.count,
-      });
+      summaries.push(toWindowSummary(deviceId, windowStart, window));
     }
   }
 

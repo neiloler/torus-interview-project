@@ -6,8 +6,10 @@ Tier 1 is complete. Its first commit documents the requirements and adds tests
 while `summarize` is still unimplemented. Its second implements `summarize` and
 records the passing checks. Tier 2 gap detection is also complete, following
 shared utility extraction and a separate commit with 12 initially failing gap
-tests. All 46 tests now pass. Streaming is still unimplemented, and its memory
-policy remains an open design decision. Tier 3 remains deferred.
+tests. Streaming is now implemented with configurable retained-state limits;
+all 65 tests pass. Inputs that exceed those limits fail explicitly, which is a
+documented qualification of Tier 2's full-input equivalence requirement.
+Tier 3 remains deferred.
 
 ## Implementation choices
 
@@ -100,6 +102,15 @@ suite. `npm start` still prints 15 sample window summaries, and `git diff --chec
 passes. The CLI remains a summary display; gap reporting is available through
 the existing `detectGaps` export.
 
+After streaming implementation, all 65 tests pass: the previous 46 plus 9
+stream behavior tests, 7 memory tests, 1 limit-resolution test, and 2 shared
+aggregation tests. The memory suite exercises 10,000 pushes with one permitted
+sequence record; actual retained state plateaus at one device, one sequence,
+and two windows. Three seeded messy datasets also produce exactly the same
+summaries as batch processing. The sample CLI and whitespace check pass. No
+TypeScript compiler is installed in this environment; no dependency was added
+for a static type check.
+
 ## AI use and preparation
 
 Codex assisted with interpreting the brief, discussing tradeoffs, proposing a
@@ -146,11 +157,12 @@ updates newest time only on acceptance. Windows and statistics remain separate.
 These helpers are internal module exports; `src/index.ts` is unchanged.
 
 Batch acceptance keeps full sequence history and has O(s) storage for distinct
-device/sequence pairs. This extraction does not reduce duplicate-history memory.
-Streaming will need a deliberate retention policy; sharing the rules does not
-mean adopting the permanent batch `Set` unchanged. Keep aggregation in
-`summarize` until streaming provides a second caller. Do not build a generic
-storage interface before the streaming design needs one.
+device/sequence pairs. Streaming uses its own timestamped sequence history so
+it can expire old entries. It reuses `isValidValue`, but cannot reuse the batch
+helper's permanent history. Batch/stream equivalence tests check their behavior
+together. `addToWindow` and `toWindowSummary` now live in
+`src/window-aggregation.ts` for both summary implementations, with one concise
+test per helper. No generic storage interface or mock store was introduced.
 
 ### Gap detection implementation and tests
 
@@ -210,7 +222,7 @@ processing.
 3. **Completed:** Implement gap detection and update these notes. Run `npm test`, the sample
    CLI, and `git diff --check` before committing.
 
-### Streaming design checkpoint (before implementation)
+### Streaming retention rules
 
 For a device whose newest accepted timestamp is M, let C = M - maxLatenessMs.
 
@@ -229,19 +241,87 @@ unlimited devices, and invalid-only input without accepted-time progress. Exact
 duplicate detection therefore has no useful unconditional fixed memory bound
 under the stated assumptions. Sequence monotonicity is not guaranteed either.
 
-Before streaming code, decide which input/resource assumptions can be justified,
-how they would be enforced, and what happens when they are exceeded. A hard cap
-with an explicit error would change the currently specified behavior and is an
-option to discuss, not an approved design. Silently forgetting still-relevant
-records would produce incorrect results. No additional assumptions or caps have
-been adopted yet.
+The user chose configurable in-memory limits after discussing SQLite and
+hardware sizing. SQLite was not introduced: moving history to disk would still
+need a retention policy and disk-capacity handling. We never silently evict
+still-relevant records to satisfy a limit.
 
-Once the policy is settled, document the bound in terms of devices, retained
-sequence records, and open windows. Design a test-only state-size observation
-mechanism and tests for long-running progress, stalled time, invalid future
-readings, duplicate eviction boundaries, and quiet devices. Also settle repeated
-`end()` and `push()` after `end()`, which the README leaves unspecified.
+### Streaming API and limits
 
-Planning is recorded here; this does not authorize an implementation of the
-unresolved streaming policy. Percentile support remains a later decision with
-its own definition and memory tradeoff.
+Existing signatures remain `createStream(config)`, `push(reading)`, and `end()`.
+Existing `Config` objects continue to work. An optional `streamLimits` property
+allows partial overrides; batch functions ignore it. `StreamLimits`,
+`DEFAULT_STREAM_LIMITS`, and `StreamLimitError` are additive public exports.
+
+```ts
+const stream = createStream({
+  ...DEFAULT_CONFIG,
+  streamLimits: {
+    maxDevices: 1_000,
+    maxRetainedSequences: 100_000,
+  },
+});
+```
+
+The values shown are the defaults, not a measured hardware-capacity promise.
+Both must be positive safe integers. Sequence capacity applies across the whole
+stream, including invalid readings. Device capacity includes quiet and
+invalid-only devices. Raising limits requires deployment-specific memory and
+throughput measurements. Limits/settings are copied at creation so later caller
+mutations cannot change an active stream's behavior. Positive finite window
+width and nonnegative finite lateness are validated at creation.
+
+On each accepted time advance, the stream prunes obsolete sequences and closes
+eligible windows before checking sequence capacity. Duplicates and already-too-
+late readings require no new sequence entry. Exceeding a limit throws
+`StreamLimitError` with `limit` and `maximum` fields before inserting beyond
+capacity. It clears all retained state and makes subsequent `push` or `end`
+calls throw the same error. Previously emitted output cannot be retracted;
+callers must treat a failed stream as an incomplete result, not a successful
+full summary. Even `end()` must not return apparently complete output afterward.
+
+Successful `end()` flushes open windows and releases state; repeated `end()`
+returns `[]`. `push()` after successful `end()` throws. These lifecycle choices
+fill behavior left unspecified by the README.
+
+**Contract qualification:** This preserves API call compatibility and exact
+batch equivalence for inputs that stay within configured limits. It does not
+claim unconditional completion for every input permitted by the original
+README: inputs exceeding either cap produce an error. Tests expecting arbitrary
+device counts or unbounded active duplicate history without an error would not
+pass under the defaults. This tradeoff is intentional and must be disclosed.
+
+### Memory bound and verification
+
+Let D be the device cap and S the retained-sequence cap. There are at most D
+device states and S sequence/timestamp pairs. Every open window wholly at or
+after its device's cutoff contains an accepted reading with a retained sequence.
+Only one additional window per device can straddle the cutoff after all of its
+sequence records expire. Thus open aggregates are bounded by S + D. Each stores
+only count, sum, min, and max. Retained state is O(D + S) entries, independent of
+total stream duration. A single flush can temporarily allocate O(D + S) output
+summaries; returned results are then owned by the caller.
+
+This is not an absolute process-byte or out-of-memory guarantee. Device IDs have
+variable string lengths; their total retained length also contributes to memory.
+JavaScript map overhead, garbage collection, caller-owned inputs/output, and
+other application allocations are outside the count budget. There is no
+empirically established bytes-per-entry or machine RAM requirement in this work.
+
+Cleanup scans the current device's actual maps on accepted-time advances. There
+is no secondary expiry queue that can grow independently. A push takes O(R + W)
+worst-case work for that device's retained sequences/windows, with typical
+constant-time map operations; duplicate/late pushes need only lookups. This
+favors a small, auditable implementation over throughput at very large caps.
+A bounded indexed expiry structure is a possible follow-up if profiling calls
+for it.
+
+`src/stream-engine.ts` is internal and exposes count snapshots for tests; its
+factory is not exported from `src/index.ts`. Public streams expose only `push`
+and `end`. Diagnostics count actual map entries, not just the capacity counter,
+and expose no mutable storage. Tests exercise the real engine rather than a
+mock, checking cleanup boundaries, stalled/invalid-only input, future invalid
+records, global capacity, quiet devices, terminal errors, and release on end.
+Heap-size assertions are avoided because garbage collection makes them noisy.
+
+Percentile support remains deferred with its own definition and memory tradeoff.

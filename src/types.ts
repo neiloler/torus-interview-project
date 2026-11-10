@@ -16,6 +16,12 @@ export type Reading = {
   value: number | null;
 };
 
+/** Per-stream limits on retained entries, not a process-wide byte budget. */
+export type StreamLimits = {
+  maxDevices: number;
+  maxRetainedSequences: number;
+};
+
 export type Config = {
   /** Width of each tumbling window, in ms. Windows start at multiples of this. */
   windowMs: number;
@@ -28,6 +34,8 @@ export type Config = {
   gapMs: number;
   /** Inclusive bounds for a valid `value`. */
   validRange: { min: number; max: number };
+  /** Optional streaming-only limits; omitted fields use conservative defaults. */
+  streamLimits?: Partial<StreamLimits>;
 };
 
 /** Summary of one device's accepted readings within one window. */
