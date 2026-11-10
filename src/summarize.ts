@@ -1,4 +1,6 @@
 import type { Config, Reading, WindowSummary } from './types.ts';
+import { acceptReading, type AcceptanceState } from './reading-acceptance.ts';
+import { compareDeviceIds } from './compare-device-ids.ts';
 
 type Aggregate = {
   count: number;
@@ -7,51 +9,26 @@ type Aggregate = {
   max: number;
 };
 
-type DeviceState = {
-  seen: Set<number>;
-  newestTs: number;
-  windows: Map<number, Aggregate>;
-};
-
 /**
  * Tier 1. Clean `readings` (given in arrival order) and summarize each
  * device's accepted readings per window. See "Rules" in the README.
  */
 export function summarize(readings: Reading[], config: Config): WindowSummary[] {
-  const devices = new Map<string, DeviceState>();
+  const acceptance = new Map<string, AcceptanceState>();
+  const devices = new Map<string, Map<number, Aggregate>>();
 
-  for (const { deviceId, ts, seq, value } of readings) {
-    let device = devices.get(deviceId);
+  for (const reading of readings) {
+    if (!acceptReading(reading, acceptance, config)) continue;
 
-    if (!device) {
-      device = {
-        seen: new Set(),
-        newestTs: -Infinity,
-        windows: new Map(),
-      };
-      devices.set(deviceId, device);
+    const { deviceId, ts, value } = reading;
+    let windows = devices.get(deviceId);
+    if (!windows) {
+      windows = new Map();
+      devices.set(deviceId, windows);
     }
-
-    if (device.seen.has(seq)) continue;
-
-    // Rejected readings also make subsequent resends duplicates.
-    device.seen.add(seq);
-
-    if (
-      typeof value !== 'number' ||
-      !Number.isFinite(value) ||
-      value < config.validRange.min ||
-      value > config.validRange.max
-    ) {
-      continue;
-    }
-
-    if (ts < device.newestTs - config.maxLatenessMs) continue;
-
-    device.newestTs = Math.max(device.newestTs, ts);
 
     const windowStart = Math.floor(ts / config.windowMs) * config.windowMs;
-    const window = device.windows.get(windowStart);
+    const window = windows.get(windowStart);
 
     if (window) {
       window.count += 1;
@@ -59,7 +36,7 @@ export function summarize(readings: Reading[], config: Config): WindowSummary[] 
       window.min = Math.min(window.min, value);
       window.max = Math.max(window.max, value);
     } else {
-      device.windows.set(windowStart, {
+      windows.set(windowStart, {
         count: 1,
         sum: value,
         min: value,
@@ -70,8 +47,8 @@ export function summarize(readings: Reading[], config: Config): WindowSummary[] 
 
   const summaries: WindowSummary[] = [];
 
-  for (const [deviceId, device] of devices) {
-    for (const [windowStart, window] of device.windows) {
+  for (const [deviceId, windows] of devices) {
+    for (const [windowStart, window] of windows) {
       summaries.push({
         deviceId,
         windowStart,
@@ -83,9 +60,7 @@ export function summarize(readings: Reading[], config: Config): WindowSummary[] 
     }
   }
 
-  return summaries.sort((a, b) => {
-    if (a.deviceId < b.deviceId) return -1;
-    if (a.deviceId > b.deviceId) return 1;
-    return a.windowStart - b.windowStart;
-  });
+  return summaries.sort((a, b) =>
+    compareDeviceIds(a.deviceId, b.deviceId) || a.windowStart - b.windowStart,
+  );
 }

@@ -2,11 +2,11 @@
 
 ## Scope and status
 
-Tier 1 is complete. The first commit documents the requirements and adds tests
-while `summarize` is still unimplemented. The second implements `summarize` and
-records the passing checks. Tier 2 is now in design, with gap detection first
-and streaming second. Neither Tier 2 function is implemented yet. Tier 3 remains
-deferred.
+Tier 1 is complete. Its first commit documents the requirements and adds tests
+while `summarize` is still unimplemented. Its second implements `summarize` and
+records the passing checks. The first Tier 2 preparation step now extracts shared
+utilities and tests them independently. Gap detection tests are next; neither
+Tier 2 function is implemented yet. Streaming design and Tier 3 remain deferred.
 
 ## Implementation choices
 
@@ -26,10 +26,12 @@ time and O(s + w) extra memory, where n is input readings, s is distinct
 device/sequence pairs, and w is populated windows. Duplicate history grows with
 input size, which is allowed for Tier 1, not a streaming memory guarantee.
 
-Types stay local to `summarize.ts`; no shared helper layer is introduced before
-there is a second implemented caller. Public exports/signatures, dependencies,
-and CLI behavior are unchanged. Type aliases, annotations, and type-only imports
-are erasable; no enums, namespaces, or constructor parameter properties are used.
+The initial Tier 1 implementation kept types and logic in `summarize.ts`. The
+Tier 2 preparation refactor separates acceptance tracking from window aggregates
+so gap detection can reuse the rules without depending on summary state. Public
+exports/signatures, dependencies, and CLI behavior are unchanged. Type aliases,
+annotations, and type-only imports are erasable; no enums, namespaces, or
+constructor parameter properties are used.
 
 ## Tier 1 coverage review
 
@@ -83,6 +85,10 @@ first commit. `npm start` succeeds and prints 15 sample window summaries.
 `git diff --check` passes. Node executes the TypeScript directly; these commands
 verify execution, not static type checking.
 
+After shared utility extraction, `npm test` passes all 34 tests: the unchanged
+31 Tier 1 tests and one test for each of the three utilities. `npm start` still
+prints 15 sample summaries, and `git diff --check` passes.
+
 ## AI use and preparation
 
 Codex assisted with interpreting the brief, discussing tradeoffs, proposing a
@@ -109,7 +115,7 @@ configuration files have been introduced in this increment.
   rules and a defensible bound before implementing or claiming bounded memory.
 - Continue documenting assumptions, validation, and deliberate omissions here.
 
-### Proposed shared functions
+### Shared functions (extracted)
 
 | Function | Responsibility | Initial users and focused test |
 | --- | --- | --- |
@@ -117,8 +123,19 @@ configuration files have been introduced in this increment.
 | `acceptReading` | Apply per-device duplicate/lateness rules and update acceptance state in the required order | Summaries and gaps; a short arrival sequence covering invalid-first resends, accepted-time advancement, and lateness |
 | `compareDeviceIds` | Plain string comparison | Summary and gap output ordering; a short mixed-case comparison table |
 
-Names and file placement are provisional. Acceptance state must be owned by
-each invocation, never global. Batch acceptance can keep full sequence history.
+`src/reading-acceptance.ts` owns value validation and acceptance logic;
+`src/compare-device-ids.ts` owns ordering. `summarize` now calls these helpers.
+`test/shared-utilities.test.ts` has one short test per utility; the longest is
+under two dozen lines and checks a sequence of arrivals plus state after each call.
+
+Each caller creates its own `Map<string, AcceptanceState>`. `acceptReading`
+mutates only that map/state and returns a type predicate that lets callers use
+the accepted numeric value without a cast. It remembers rejected sequences but
+updates newest time only on acceptance. Windows and statistics remain separate.
+These helpers are internal module exports; `src/index.ts` is unchanged.
+
+Batch acceptance keeps full sequence history and has O(s) storage for distinct
+device/sequence pairs. This extraction does not reduce duplicate-history memory.
 Streaming will need a deliberate retention policy; sharing the rules does not
 mean adopting the permanent batch `Set` unchanged. Keep aggregation in
 `summarize` until streaming provides a second caller. Do not build a generic
@@ -150,7 +167,7 @@ processing.
 
 ### Proposed implementation commits
 
-1. Extract acceptance and ordering helpers, add their focused tests, and refactor
+1. **Completed:** Extract acceptance and ordering helpers, add their focused tests, and refactor
    `summarize` to use them. All Tier 1 tests must remain green. Keep this behavior-
    preserving change separate so regressions can be traced to the refactor.
 2. Add the gap detection tests while `detectGaps` is still a stub. Confirm that

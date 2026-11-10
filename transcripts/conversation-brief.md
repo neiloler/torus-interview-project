@@ -84,3 +84,16 @@ transcript remains a final-submission task; this brief does not replace it.
   count. Streaming assumptions, enforcement, and behavior on exceeding resource
   limits remain open decisions. No Tier 2 implementation was made during this
   planning step.
+
+## Shared utility extraction
+
+- The user requested committing the planning documents, then completing only
+  the shared utility extraction/testing step in one implementation commit.
+- Extracted `isValidValue`, `acceptReading`, and `compareDeviceIds`; refactored
+  `summarize` to call them while keeping acceptance state separate from windows.
+- Added one concise test per utility. All 31 existing tests remain unchanged;
+  the complete suite now passes 34 tests. The sample CLI and whitespace check
+  also pass.
+- Batch acceptance still stores all seen sequence numbers. Streaming's memory
+  problem remains open. Gap detection and streaming were not implemented in
+  this step.
