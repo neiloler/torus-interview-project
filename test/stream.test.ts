@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStream, summarize, DEFAULT_CONFIG, type Config, type Reading, type WindowSummary } from '../src/index.ts';
 import { generate } from '../scripts/generate.ts';
+import { withoutP95 } from './helpers/percentile.ts';
 
 const config: Config = { ...DEFAULT_CONFIG, windowMs: 10, maxLatenessMs: 5 };
 const r = (deviceId: string, ts: number, seq: number, value: number | null = 1): Reading => ({ deviceId, ts, seq, value });
@@ -12,11 +13,11 @@ test('a window closes exactly when the accepted cutoff reaches its exclusive end
   const stream = createStream(config);
   assert.deepEqual(stream.push(r('a', 1, 1)), []);
   assert.deepEqual(stream.push(r('a', 14, 2, 2)), []);
-  assert.deepEqual(stream.push(r('a', 15, 3, 3)), [
+  assert.deepEqual(stream.push(r('a', 15, 3, 3)).map(withoutP95), [
     { deviceId: 'a', windowStart: 0, count: 1, min: 1, max: 1, avg: 1 },
   ]);
   assert.deepEqual(stream.push(r('a', 10, 4, 4)), []); // Exactly at the cutoff.
-  assert.deepEqual(stream.end(), [
+  assert.deepEqual(stream.end().map(withoutP95), [
     { deviceId: 'a', windowStart: 10, count: 3, min: 2, max: 4, avg: 3 },
   ]);
 });
@@ -28,7 +29,7 @@ test('another device and rejected future readings cannot close a quiet device wi
   assert.deepEqual(stream.push(r('a', 15, 2)).map((w) => w.deviceId), ['a']);
   assert.deepEqual(stream.push(r('b', 100, 2, null)), []);
   assert.deepEqual(stream.push(r('b', 100, 2, 10)), []);
-  assert.deepEqual(stream.end().sort(order), [
+  assert.deepEqual(stream.end().sort(order).map(withoutP95), [
     { deviceId: 'a', windowStart: 10, count: 1, min: 1, max: 1, avg: 1 },
     { deviceId: 'b', windowStart: 0, count: 1, min: 1, max: 1, avg: 1 },
   ]);
@@ -97,7 +98,7 @@ test('stream captures settings rather than observing later caller mutations', ()
   settings.validRange.max = 0;
   settings.streamLimits.maxDevices = 0;
   stream.push(r('a', 10, 1, 5));
-  assert.deepEqual(stream.end(), [
+  assert.deepEqual(stream.end().map(withoutP95), [
     { deviceId: 'a', windowStart: 10, count: 1, min: 5, max: 5, avg: 5 },
   ]);
 });

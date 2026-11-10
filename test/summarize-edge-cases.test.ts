@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { summarize, type Config, type Reading } from '../src/index.ts';
+import { summarize as summarizeWithP95, type Config, type Reading } from '../src/index.ts';
+import { withoutP95 } from './helpers/percentile.ts';
+
+const summarize = (readings: Reading[], config: Config) => summarizeWithP95(readings, config).map(withoutP95);
 
 const config: Config = {
   windowMs: 60_000,

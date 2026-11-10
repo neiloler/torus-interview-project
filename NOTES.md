@@ -7,10 +7,11 @@ while `summarize` is still unimplemented. Its second implements `summarize` and
 records the passing checks. Tier 2 gap detection is also complete, following
 shared utility extraction and a separate commit with 12 initially failing gap
 tests. Streaming is now implemented with configurable retained-state limits;
-all 65 tests pass. Inputs that exceed those limits fail explicitly, which is a
+its 65 baseline tests pass. Inputs that exceed those limits fail explicitly, which is a
 documented qualification of Tier 2's full-input equivalence requirement.
 Tier 3 now has an agreed histogram-based p95 design. Its documentation and tests
-are separate commits; percentile implementation is still pending.
+are separate commits; percentile implementation is still pending. The full suite
+currently has 84 tests: 65 pass and 19 percentile tests intentionally fail.
 
 ## Implementation choices
 
@@ -111,6 +112,12 @@ and two windows. Three seeded messy datasets also produce exactly the same
 summaries as batch processing. The sample CLI and whitespace check pass. No
 TypeScript compiler is installed in this environment; no dependency was added
 for a static type check.
+
+At the Tier 3 test-first checkpoint, `npm test` discovers 84 tests. All 65
+baseline cases still pass; the 19 new cases fail on missing p95 output,
+histogram-byte diagnostics/defaults, or configuration/resource-limit errors.
+There are no test import errors. `git diff --check` passes. No production code
+or public types were changed in the percentile test commit.
 
 ## AI use and preparation
 
@@ -403,13 +410,38 @@ Batch summarization remains an in-memory batch API, without a total-memory cap.
 
 ### Test-first implementation plan
 
-1. Commit this decision and the conversation summary before changing tests.
-2. Commit tests for explicit percentile examples, the theoretical error bound
+1. **Completed:** Commit this decision and the conversation summary before changing tests.
+2. **Completed:** Commit tests for explicit percentile examples, the theoretical error bound
    against independently sorted values, bucket/range endpoints, configuration,
    acceptance rules, independent windows/devices, and final-only streaming.
-3. Include tests for constant histogram size as reading count grows, allocation
+3. **Completed:** Include tests for constant histogram size as reading count grows, allocation
    only for accepted windows, budget reuse after closure, quiet devices sharing
    the budget, and release on end or failure. Test existing metric fields
    independently so adding p95 does not obscure count/min/max/average regressions.
 4. Implement the percentile in a later commit. Preserve the original API call
    signatures and the documented resource-limit qualifications.
+
+### Percentile test layout
+
+- `test/p95.test.ts`: 13 public-API cases for fixed midpoint examples, frequency-
+  weighted nearest rank, bucket endpoints, singleton/constant/zero-width ranges,
+  default accuracy, error bounds across three ranges and five resolutions,
+  acceptance and immutability, device/window isolation, invalid configuration,
+  final-only streaming, duplicate-history expiry, and configuration snapshots.
+- `test/p95-memory.test.ts`: 6 cases for the default/validated byte budget,
+  fixed storage while 10,000 readings accumulate, rejected readings requiring
+  no allocation, undersized budgets, closure-before-allocation across 1,000
+  windows, global budget sharing/terminal failure, and late-opened windows.
+- `test/helpers/percentile.ts`: test-only helpers that require a finite p95
+  when checking percentile behavior, or omit the optional field when comparing
+  the original metrics. Existing Tier 1 and explicit streaming metric fixtures
+  use the latter; whole-result batch/stream equivalence checks still compare p95
+  too once it exists. Existing memory checks continue to check device/sequence/
+  window counts while the new suite checks histogram bytes separately.
+
+Tests use public entry points and the existing internal engine diagnostics.
+They do not import a nonexistent future histogram module or reproduce its bucket
+implementation. The numerical reference sorts small, known accepted datasets
+and selects the exact nearest-rank value independently. Internal utility and
+counter-overflow checks can accompany the implementation once those utility
+boundaries exist; no overflow protection is claimed to be verified yet.

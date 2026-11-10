@@ -159,3 +159,16 @@ transcript remains a final-submission task; this brief does not replace it.
   details in `NOTES.md`.
 - The user requested two commits in this step: documentation first, then the
   percentile test suites. Actual percentile implementation is deferred.
+
+## Percentile test-first checkpoint
+
+- Committed the approximation decision before editing tests.
+- Added 13 percentile behavior/accuracy cases and 6 histogram-memory cases in
+  separate test files. Exact reference values come from sorting accepted values;
+  examples also specify bucket midpoints, clamping, and boundary behavior.
+- Adapted existing metric assertions to allow the additional optional p95 field
+  while still checking all prior metrics. Full streaming/batch comparisons
+  remain intact. New percentile tests explicitly require a finite p95.
+- The resulting suite has 84 tests: 65 existing cases pass and 19 new cases fail
+  because the planned percentile behavior and histogram budget do not exist yet.
+  Production source files and types remain unchanged in this test-only step.
