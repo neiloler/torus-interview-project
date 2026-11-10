@@ -7,6 +7,14 @@ messages, including progress updates). It starts with the README discussion and
 includes the implementation, independent review, discovered bug, and subsequent fix.
 Timestamps are UTC; their date can differ from the user's America/Denver date.
 
+## Timing clarification provided after export
+
+The user clarified that this work happened on and off throughout a busy evening.
+The time between the first and last messages does not represent continuous work
+at the computer. Active working time was not separately recorded, so the timestamp
+span should not be used as an active-effort total. This clarification was added
+after the export; the original dialogue below remains unchanged.
+
 ## Export scope and edits
 
 - Message text is copied from the saved session, not reconstructed from the

@@ -137,9 +137,12 @@ and Git operations. The user drove the questions, priorities, memory policy,
 approximation decision, commit sequencing, and request for independent review.
 This was substantial AI assistance, not just autocomplete or proofreading.
 
-The recorded conversation spans multiple hours of elapsed time, including gaps
-between messages and preparation before implementation. No separate active-work
-timer was recorded in this session; this is not presented as a one-hour completion.
+The work happened on and off throughout a busy evening, rather than in one
+continuous session at the computer. The transcript spans multiple hours, including
+breaks, gaps between messages, and preparation before implementation. That elapsed
+span should not be treated as the time actively spent on the exercise. No separate
+active-work timer was recorded, so we cannot give a reliable active-time total or
+claim a one-hour completion.
 
 `transcripts/conversation-transcript.md` contains the saved user/assistant dialogue
 from the initial README discussion through the request to export it. It preserves

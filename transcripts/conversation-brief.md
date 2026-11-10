@@ -220,3 +220,11 @@ transcript remains a final-submission task; this brief does not replace it.
 - Updated NOTES to describe the substantial AI assistance and elapsed-time
   limitations candidly. This export completes the previously pending dialogue
   transcript artifact; it does not claim a user review or email submission occurred.
+
+## Timing clarification after export
+
+- The user clarified that the work took place on and off during a busy evening,
+  rather than continuously from the first message to the last.
+- Updated NOTES and the transcript introduction to distinguish elapsed wall-clock
+  time from active effort. No active-time estimate was invented, and the original
+  exported dialogue was left unchanged.
