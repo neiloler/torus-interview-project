@@ -22,6 +22,37 @@ test('a window closes exactly when the accepted cutoff reaches its exclusive end
   ]);
 });
 
+test('fractional windows stay open until the cutoff belongs to a later window', () => {
+  for (const [first, boundary, next] of [[0.5, 0.6, 0.7], [4.2, 4.3, 4.4]]) {
+    const settings = { ...config, windowMs: 0.1, maxLatenessMs: 0 };
+    const readings = [r('a', first, 1, 1), r('a', boundary, 2, 2), r('a', next, 3, 3)];
+    const stream = createStream(settings);
+    assert.deepEqual(stream.push(readings[0]), []);
+    // Division assigns this apparent boundary to the first reading's window.
+    assert.deepEqual(stream.push(readings[1]), []);
+    const closed = stream.push(readings[2]);
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].windowStart, first);
+    assert.equal(closed[0].count, 2);
+    const results = [...closed, ...stream.end()];
+    assert.deepEqual(results.sort(order), summarize(readings, settings));
+    assert.equal(new Set(results.map((w) => w.windowStart)).size, results.length);
+    assert.deepEqual(stream.end(), []);
+  }
+});
+
+test('a fractional cutoff keeps its window open for a reading exactly at the lateness limit', () => {
+  const settings = { ...config, windowMs: 0.1, maxLatenessMs: 0.25 };
+  const readings = [r('a', 0.5, 1, 1), r('a', 0.85, 2, 2), r('a', 0.6, 3, 3), r('a', 1, 4, 4)];
+  const stream = createStream(settings);
+  for (const reading of readings.slice(0, 3)) assert.deepEqual(stream.push(reading), []);
+  const closed = stream.push(readings[3]);
+  assert.equal(closed.length, 1);
+  assert.equal(closed[0].windowStart, 0.5);
+  assert.equal(closed[0].count, 2);
+  assert.deepEqual([...closed, ...stream.end()].sort(order), summarize(readings, settings));
+});
+
 test('another device and rejected future readings cannot close a quiet device window', () => {
   const stream = createStream(config);
   stream.push(r('a', 1, 1));

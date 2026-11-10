@@ -1,9 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addToWindow, toWindowSummary, type Aggregate } from '../src/window-aggregation.ts';
+import { addToWindow, getWindowStart, toWindowSummary, type Aggregate } from '../src/window-aggregation.ts';
 import { withoutP95 } from './helpers/percentile.ts';
 import { resolveHistogramConfig } from '../src/histogram.ts';
 import { DEFAULT_CONFIG } from '../src/config.ts';
+
+test('getWindowStart preserves epoch alignment and fractional division rounding', () => {
+  for (const [ts, width, expected] of [[-1, 10, -10], [0, 10, 0], [10, 10, 10], [0.6, 0.1, 0.5], [4.3, 0.1, 4.2]]) {
+    assert.equal(getWindowStart(ts, width), expected);
+  }
+});
 
 test('addToWindow groups values by epoch-aligned windows and updates statistics', () => {
   const windows = new Map<number, Aggregate>();

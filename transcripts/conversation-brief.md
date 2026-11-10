@@ -187,3 +187,20 @@ transcript remains a final-submission task; this brief does not replace it.
 - All 87 tests pass, including all 19 previously failing percentile cases.
   The sample CLI succeeds and prints p95. Updated NOTES with implementation,
   validation, complexity, and the limits of the retained-memory guarantee.
+
+## Final review and fractional-window correction
+
+- At the user's request, two independent reviewers ran the existing suite and
+  additional reference-based randomized tests. They rated the project 88/100
+  and 86/100. Both found premature closure for fractional window widths and
+  identified the still-missing full session transcript.
+- The user requested a regression, a fix, and explanations in code and notes.
+  Added two initially failing streaming regressions for zero lateness and an
+  accepted reading exactly at a fractional lateness cutoff.
+- Extracted the README's window-assignment formula into `getWindowStart`.
+  Streaming now closes only windows before the cutoff's assigned window,
+  avoiding disagreement between floating-point addition and division that
+  previously allowed a finalized window to reopen and be emitted twice.
+- Added explanatory source comments and implementation notes, plus one focused
+  test for the shared helper. All 90 tests and the sample CLI pass. The full
+  transcript export/review remains a separate submission task.

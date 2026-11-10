@@ -10,8 +10,8 @@ tests. Streaming is now implemented with configurable retained-state limits;
 its 65 baseline tests pass. Inputs that exceed those limits fail explicitly, which is a
 documented qualification of Tier 2's full-input equivalence requirement.
 Tier 3 histogram-based p95 is implemented for batch and streaming summaries,
-following separate documentation and test commits. All 87 tests pass, including
-accuracy, memory-budget, and utility checks.
+following separate documentation and test commits. All 90 tests pass, including
+accuracy, memory-budget, utility, and fractional-window regression checks.
 
 ## Implementation choices
 
@@ -180,7 +180,9 @@ it can expire old entries. It reuses `isValidValue`, but cannot reuse the batch
 helper's permanent history. Batch/stream equivalence tests check their behavior
 together. `addToWindow` and `toWindowSummary` now live in
 `src/window-aggregation.ts` for both summary implementations, with one concise
-test per helper. No generic storage interface or mock store was introduced.
+test per helper. `getWindowStart` also lives there so aggregation, histogram
+allocation checks, and stream closure use the same window-assignment arithmetic.
+No generic storage interface or mock store was introduced.
 
 ### Gap detection implementation and tests
 
@@ -244,7 +246,10 @@ processing.
 
 For a device whose newest accepted timestamp is M, let C = M - maxLatenessMs.
 
-- A window can be emitted when `windowStart + windowMs <= C`.
+- Assign C to a window using `floor(C / windowMs) * windowMs`. Emit windows whose
+  starts are strictly before that start; the cutoff's own window remains open.
+  With exact arithmetic this is equivalent to `windowStart + windowMs <= C`,
+  but the assignment-based comparison also handles floating-point rounding.
 - A duplicate record can be forgotten only once its timestamp is strictly less
   than C: a resend has the same timestamp and must then be rejected as too late.
   Records at C must remain remembered because equality is still admissible.
@@ -344,6 +349,31 @@ and expose no mutable storage. Tests exercise the real engine rather than a
 mock, checking cleanup boundaries, stalled/invalid-only input, future invalid
 records, global capacity, quiet devices, terminal errors, and release on end.
 Heap-size assertions are avoided because garbage collection makes them noisy.
+
+### Fractional window finalization regression
+
+Independent final reviews found that the original closure comparison
+`windowStart + windowMs <= cutoff` could disagree with the README's assignment
+formula for fractional widths. For width 0.1, JavaScript assigns both timestamps
+0.5 and 0.6 to window start 0.5 because `floor(0.6 / 0.1)` is 5. However,
+`0.5 + 0.1 <= 0.6` is true. The old stream closed that window too early, then
+reopened it for the second reading, emitting the same window twice.
+
+The fix uses the shared `getWindowStart` helper to assign the cutoff to its
+earliest still-open window. Only windows with strictly smaller starts close.
+The cutoff itself is admissible, and assignment is monotonic, so accepted
+readings at or after it cannot reopen those earlier windows. This also handles
+nonzero lateness: closure depends on the cutoff's window, not the newest
+reading's window. No epsilon, timestamp rounding, or integer-only restriction
+is introduced. Comments in `src/stream-engine.ts` explain why adding the window
+width is unsafe here.
+
+Two regressions in `test/stream.test.ts` failed against the original code, then
+passed after the fix. They cover both reported fractional examples, exactly-once
+emission when the cutoff moves into a later window, batch equality including
+p95, and an accepted late reading exactly at a fractional cutoff. A focused
+`getWindowStart` test records integer, negative, and fractional assignments.
+All 90 tests pass; `npm start` and `git diff --check` also succeed.
 
 ## Tier 3 decision: approximate p95
 

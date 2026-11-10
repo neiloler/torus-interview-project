@@ -3,7 +3,7 @@ import type { Stream } from './stream.ts';
 import { isValidValue } from './reading-acceptance.ts';
 import { resolveHistogramConfig } from './histogram.ts';
 import { resolveStreamLimits, StreamLimitError } from './stream-limits.ts';
-import { addToWindow, toWindowSummary, type Aggregate } from './window-aggregation.ts';
+import { addToWindow, getWindowStart, toWindowSummary, type Aggregate } from './window-aggregation.ts';
 
 type DeviceState = {
   newestTs: number;
@@ -67,8 +67,14 @@ export function createStreamEngine(config: Config) {
           retainedSequences -= 1;
         }
       }
+      // The cutoff itself is still admissible, so its assigned window stays open.
+      // Do not compare start + windowMs with cutoff: for width 0.1, cutoff 0.6
+      // maps to start 0.5 even though 0.5 + 0.1 <= 0.6. Closing it would let a
+      // later accepted reading reopen an already emitted window. Shared assignment
+      // arithmetic keeps closure consistent with batch, including fractional widths.
+      const earliestOpenWindow = getWindowStart(cutoff, windowMs);
       for (const [start, aggregate] of device.windows) {
-        if (start + windowMs <= cutoff) {
+        if (start < earliestOpenWindow) {
           completed.push(toWindowSummary(deviceId, start, aggregate));
           retainedHistogramBytes -= aggregate.histogram?.counts.byteLength ?? 0;
           device.windows.delete(start);
@@ -81,7 +87,7 @@ export function createStreamEngine(config: Config) {
     device.seen.set(seq, ts);
     retainedSequences += 1;
     if (valid) {
-      const start = Math.floor(ts / windowMs) * windowMs;
+      const start = getWindowStart(ts, windowMs);
       const additionalBytes = device.windows.has(start) ? 0 : histogramConfig.byteLength;
       if (additionalBytes > limits.maxHistogramBytes - retainedHistogramBytes) fail('maxHistogramBytes');
       try {

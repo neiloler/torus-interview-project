@@ -3,11 +3,16 @@ import { addHistogramValue, histogramP95, type Histogram, type HistogramConfig }
 
 export type Aggregate = { count: number; sum: number; min: number; max: number; histogram?: Histogram };
 
+/** Use the README's assignment rule for both aggregation and stream closure. */
+export function getWindowStart(ts: number, windowMs: number): number {
+  return Math.floor(ts / windowMs) * windowMs;
+}
+
 export function addToWindow(
   windows: Map<number, Aggregate>, ts: number, value: number, windowMs: number,
   histogramConfig?: HistogramConfig,
 ): void {
-  const start = Math.floor(ts / windowMs) * windowMs;
+  const start = getWindowStart(ts, windowMs);
   const aggregate = windows.get(start);
   if (aggregate) {
     if (aggregate.count >= Number.MAX_SAFE_INTEGER) {
