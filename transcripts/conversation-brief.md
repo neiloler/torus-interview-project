@@ -97,3 +97,14 @@ transcript remains a final-submission task; this brief does not replace it.
 - Batch acceptance still stores all seen sequence numbers. Streaming's memory
   problem remains open. Gap detection and streaming were not implemented in
   this step.
+
+## Gap-reporting tests
+
+- The user requested the testing side of gap reporting, including corner cases.
+- Added 12 public-API tests in `test/gaps.test.ts`, covering threshold boundaries,
+  chronological neighbors after arrival-order acceptance, rejected readings and
+  resends, duplicate timestamps, device independence, output ordering, actual
+  endpoints across windows, empty inputs, immutability, and independent calls.
+- Kept production code and the existing tests unchanged. `npm test` reports
+  34 passing tests and 12 gap tests failing with the expected `not implemented`
+  error. Implementation is reserved for the next commit.

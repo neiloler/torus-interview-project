@@ -5,8 +5,9 @@
 Tier 1 is complete. Its first commit documents the requirements and adds tests
 while `summarize` is still unimplemented. Its second implements `summarize` and
 records the passing checks. The first Tier 2 preparation step now extracts shared
-utilities and tests them independently. Gap detection tests are next; neither
-Tier 2 function is implemented yet. Streaming design and Tier 3 remain deferred.
+utilities and tests them independently. Gap detection now has a test-first
+commit with 12 failing tests; implementation is next. Neither Tier 2 function is
+implemented yet. Streaming design and Tier 3 remain deferred.
 
 ## Implementation choices
 
@@ -65,7 +66,7 @@ exercise the observable requirement to remember rejected readings.
 ## Assumptions and design constraints
 
 - Inputs conform to `Reading`; timestamps and sequences are valid finite numbers.
-- Configuration has a positive finite window width, nonnegative finite lateness,
+- Configuration has a positive finite window width, nonnegative finite lateness and gap threshold,
   and ordered finite range bounds. Behavior for malformed configuration is not
   specified by the exercise and is outside this increment.
 - Process in arrival order; sort only output summaries. Do not modify inputs.
@@ -88,6 +89,11 @@ verify execution, not static type checking.
 After shared utility extraction, `npm test` passes all 34 tests: the unchanged
 31 Tier 1 tests and one test for each of the three utilities. `npm start` still
 prints 15 sample summaries, and `git diff --check` passes.
+
+At the gap-test checkpoint, `npm test` discovers 46 tests: the existing 34 pass,
+and the 12 new gap tests fail with `not implemented`. This failure is deliberate:
+`src/gaps.ts` remains a stub for the next implementation commit. No existing
+tests or production code changed in the gap-test commit.
 
 ## AI use and preparation
 
@@ -159,6 +165,24 @@ and output ordering, and input immutability. Keep the 31 Tier 1 tests unchanged
 as regression coverage. Utility tests target shared behavior; gap tests target
 how accepted timestamps become output, rather than repeating every value case.
 
+The 12 tests are localized in `test/gaps.test.ts`. Expected outputs are explicit,
+not computed using the shared acceptance helper or the function under test:
+
+| Case | Expected behavior |
+| --- | --- |
+| Empty, single, rejected-only, or one reading per device | No gaps; no invented leading/trailing endpoints |
+| Separation below, equal to, and above `gapMs` | Only the strictly greater separation is reported |
+| Accepted out-of-order reading | Splits a large interval into consecutive gaps after sorting |
+| Too-late middle reading | Does not split the interval; sorting must follow acceptance |
+| Invalid middle reading and valid resend | Neither contributes an endpoint |
+| Invalid future reading and valid resend | Neither advances accepted time nor creates an endpoint |
+| Duplicates and distinct sequences at equal timestamps | No repeated or zero-length gaps |
+| Independent devices with shared sequences and different clocks | Separate acceptance histories; plain string ID and numeric start ordering |
+| Negative timestamps and window boundaries | Preserve exact timestamps; gaps are independent of summary windows |
+| Zero `gapMs` | Any positive separation is a gap, equality is not |
+| Frozen input array and readings | No mutation during acceptance or sorting |
+| Repeated calls | No retained acceptance history or results between invocations |
+
 This is a batch API: its extra memory remains O(n) in the worst case for seen
 sequences and accepted timestamps; worst-case time is O(n log n), including
 sorting. Store timestamps rather than copies of full reading objects. Do not
@@ -170,7 +194,7 @@ processing.
 1. **Completed:** Extract acceptance and ordering helpers, add their focused tests, and refactor
    `summarize` to use them. All Tier 1 tests must remain green. Keep this behavior-
    preserving change separate so regressions can be traced to the refactor.
-2. Add the gap detection tests while `detectGaps` is still a stub. Confirm that
+2. **Completed:** Add the gap detection tests while `detectGaps` is still a stub. Confirm that
    new gap tests fail for the expected reason and existing tests still pass.
 3. Implement gap detection and update these notes. Run `npm test`, the sample
    CLI, and `git diff --check` before committing.
