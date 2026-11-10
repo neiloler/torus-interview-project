@@ -1,6 +1,7 @@
 import type { Config, Reading, StreamLimits, WindowSummary } from './types.ts';
 import type { Stream } from './stream.ts';
 import { isValidValue } from './reading-acceptance.ts';
+import { resolveHistogramConfig } from './histogram.ts';
 import { resolveStreamLimits, StreamLimitError } from './stream-limits.ts';
 import { addToWindow, toWindowSummary, type Aggregate } from './window-aggregation.ts';
 
@@ -14,6 +15,7 @@ type DeviceState = {
 export function createStreamEngine(config: Config) {
   const { windowMs, maxLatenessMs } = config;
   const validRange = { ...config.validRange };
+  const histogramConfig = resolveHistogramConfig(config);
   const limits = resolveStreamLimits(config.streamLimits);
   if (!Number.isFinite(windowMs) || windowMs <= 0 ||
       !Number.isFinite(maxLatenessMs) || maxLatenessMs < 0) {
@@ -22,14 +24,20 @@ export function createStreamEngine(config: Config) {
 
   const devices = new Map<string, DeviceState>();
   let retainedSequences = 0;
+  let retainedHistogramBytes = 0;
   let ended = false;
-  let failure: StreamLimitError | undefined;
+  let failure: Error | undefined;
 
-  function fail(limit: keyof StreamLimits): never {
-    failure = new StreamLimitError(limit, limits[limit]);
+  function abort(error: Error): never {
+    failure = error;
     devices.clear();
     retainedSequences = 0;
+    retainedHistogramBytes = 0;
     throw failure;
+  }
+
+  function fail(limit: keyof StreamLimits): never {
+    return abort(new StreamLimitError(limit, limits[limit]));
   }
 
   function push(reading: Reading): WindowSummary[] {
@@ -62,6 +70,7 @@ export function createStreamEngine(config: Config) {
       for (const [start, aggregate] of device.windows) {
         if (start + windowMs <= cutoff) {
           completed.push(toWindowSummary(deviceId, start, aggregate));
+          retainedHistogramBytes -= aggregate.histogram?.counts.byteLength ?? 0;
           device.windows.delete(start);
         }
       }
@@ -71,7 +80,19 @@ export function createStreamEngine(config: Config) {
     if (retainedSequences >= limits.maxRetainedSequences) fail('maxRetainedSequences');
     device.seen.set(seq, ts);
     retainedSequences += 1;
-    if (valid) addToWindow(device.windows, ts, value, windowMs);
+    if (valid) {
+      const start = Math.floor(ts / windowMs) * windowMs;
+      const additionalBytes = device.windows.has(start) ? 0 : histogramConfig.byteLength;
+      if (additionalBytes > limits.maxHistogramBytes - retainedHistogramBytes) fail('maxHistogramBytes');
+      try {
+        addToWindow(device.windows, ts, value, windowMs, histogramConfig);
+      } catch (error) {
+        // Allocation/precision failure cannot leave a partially usable stream.
+        if (error instanceof Error) abort(error);
+        throw error;
+      }
+      retainedHistogramBytes += additionalBytes;
+    }
     return completed;
   }
 
@@ -86,6 +107,7 @@ export function createStreamEngine(config: Config) {
     }
     devices.clear();
     retainedSequences = 0;
+    retainedHistogramBytes = 0;
     ended = true;
     return completed;
   }
@@ -96,11 +118,15 @@ export function createStreamEngine(config: Config) {
     retainedCounts() {
       let sequences = 0;
       let windows = 0;
+      let histogramBytes = 0;
       for (const device of devices.values()) {
         sequences += device.seen.size;
         windows += device.windows.size;
+        for (const aggregate of device.windows.values()) {
+          histogramBytes += aggregate.histogram?.counts.byteLength ?? 0;
+        }
       }
-      return { devices: devices.size, sequences, windows };
+      return { devices: devices.size, sequences, windows, histogramBytes };
     },
   };
 }

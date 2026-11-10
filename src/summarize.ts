@@ -1,6 +1,7 @@
 import type { Config, Reading, WindowSummary } from './types.ts';
 import { acceptReading, type AcceptanceState } from './reading-acceptance.ts';
 import { compareDeviceIds } from './compare-device-ids.ts';
+import { resolveHistogramConfig } from './histogram.ts';
 import { addToWindow, toWindowSummary, type Aggregate } from './window-aggregation.ts';
 
 /**
@@ -8,6 +9,7 @@ import { addToWindow, toWindowSummary, type Aggregate } from './window-aggregati
  * device's accepted readings per window. See "Rules" in the README.
  */
 export function summarize(readings: Reading[], config: Config): WindowSummary[] {
+  const histogramConfig = resolveHistogramConfig(config);
   const acceptance = new Map<string, AcceptanceState>();
   const devices = new Map<string, Map<number, Aggregate>>();
 
@@ -21,7 +23,7 @@ export function summarize(readings: Reading[], config: Config): WindowSummary[] 
       devices.set(deviceId, windows);
     }
 
-    addToWindow(windows, ts, value, config.windowMs);
+    addToWindow(windows, ts, value, config.windowMs, histogramConfig);
   }
 
   const summaries: WindowSummary[] = [];

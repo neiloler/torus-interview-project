@@ -9,9 +9,9 @@ shared utility extraction and a separate commit with 12 initially failing gap
 tests. Streaming is now implemented with configurable retained-state limits;
 its 65 baseline tests pass. Inputs that exceed those limits fail explicitly, which is a
 documented qualification of Tier 2's full-input equivalence requirement.
-Tier 3 now has an agreed histogram-based p95 design. Its documentation and tests
-are separate commits; percentile implementation is still pending. The full suite
-currently has 84 tests: 65 pass and 19 percentile tests intentionally fail.
+Tier 3 histogram-based p95 is implemented for batch and streaming summaries,
+following separate documentation and test commits. All 87 tests pass, including
+accuracy, memory-budget, and utility checks.
 
 ## Implementation choices
 
@@ -21,14 +21,17 @@ Sequences are recorded before validity and lateness checks. Only accepted
 readings update timestamps and aggregates. Summaries are created after the pass
 and sorted without mutating the input.
 
-Aggregates store count, sum, min, and max rather than individual readings.
+Aggregates store count, sum, min, max, and a fixed-size percentile histogram
+rather than individual readings.
 Average is sum/count using JavaScript numbers, without rounding. Extreme custom
 ranges or input sizes could overflow the sum; compensated or overflow-resistant
 arithmetic is outside this exercise increment.
 
-With typical constant-time map/set operations, processing takes O(n + w log w)
-time and O(s + w) extra memory, where n is input readings, s is distinct
-device/sequence pairs, and w is populated windows. Duplicate history grows with
+With typical constant-time map/set operations, processing takes O(n + wB + w log w)
+time and O(s + wB) extra memory, where n is input readings, s is distinct
+device/sequence pairs, w is populated windows, and B is histogram bucket count.
+Each accepted value updates one counter; finalization scans at most B buckets.
+Duplicate history grows with
 input size, which is allowed for Tier 1, not a streaming memory guarantee.
 
 The initial Tier 1 implementation kept types and logic in `summarize.ts`. The
@@ -72,7 +75,8 @@ exercise the observable requirement to remember rejected readings.
 - Inputs conform to `Reading`; timestamps and sequences are valid finite numbers.
 - Configuration has a positive finite window width, nonnegative finite lateness and gap threshold,
   and ordered finite range bounds. Behavior for malformed configuration is not
-  specified by the exercise and is outside this increment.
+  specified by the exercise. Streaming validates width/lateness, and both summary
+  APIs validate percentile resolution/range, including bucket-width underflow.
 - Process in arrival order; sort only output summaries. Do not modify inputs.
 - Preserve the public exports and function signatures. Use erasable TypeScript,
   `.ts` imports, and type-only imports. Add no dependencies.
@@ -118,6 +122,12 @@ baseline cases still pass; the 19 new cases fail on missing p95 output,
 histogram-byte diagnostics/defaults, or configuration/resource-limit errors.
 There are no test import errors. `git diff --check` passes. No production code
 or public types were changed in the percentile test commit.
+
+After percentile implementation, all 87 tests pass: the 84 committed cases plus
+one focused test for each of the three histogram utilities. The existing
+aggregation test also verifies that count overflow throws before mutating the
+aggregate or its histogram. `npm start` prints 15 summaries including p95;
+`git diff --check` passes. These are runtime checks, not static type checking.
 
 ## AI use and preparation
 
@@ -295,7 +305,7 @@ fill behavior left unspecified by the README.
 **Contract qualification:** This preserves API call compatibility and exact
 batch equivalence for inputs that stay within configured limits. It does not
 claim unconditional completion for every input permitted by the original
-README: inputs exceeding either cap produce an error. Tests expecting arbitrary
+README: inputs exceeding any retained-state cap produce an error. Tests expecting arbitrary
 device counts or unbounded active duplicate history without an error would not
 pass under the defaults. This tradeoff is intentional and must be disclosed.
 
@@ -306,8 +316,10 @@ device states and S sequence/timestamp pairs. Every open window wholly at or
 after its device's cutoff contains an accepted reading with a retained sequence.
 Only one additional window per device can straddle the cutoff after all of its
 sequence records expire. Thus open aggregates are bounded by S + D. Each stores
-only count, sum, min, and max. Retained state is O(D + S) entries, independent of
-total stream duration. A single flush can temporarily allocate O(D + S) output
+count, sum, min, max, and B eight-byte histogram counters. With histogram budget
+H bytes, open windows are also bounded by floor(H / (8B)). Retained state has
+O(D + S) map entries plus at most H counter-array bytes, independent of total
+stream duration. A single flush can temporarily allocate O(D + S) output
 summaries; returned results are then owned by the caller.
 
 This is not an absolute process-byte or out-of-memory guarantee. Device IDs have
@@ -317,8 +329,9 @@ other application allocations are outside the count budget. There is no
 empirically established bytes-per-entry or machine RAM requirement in this work.
 
 Cleanup scans the current device's actual maps on accepted-time advances. There
-is no secondary expiry queue that can grow independently. A push takes O(R + W)
-worst-case work for that device's retained sequences/windows, with typical
+is no secondary expiry queue that can grow independently. A push takes
+O(R + W + FB + B) worst-case work for that device's retained sequences/windows
+and F finalized windows, including initialization of a new B-counter array, with typical
 constant-time map operations; duplicate/late pushes need only lookups. This
 favors a small, auditable implementation over throughput at very large caps.
 A bounded indexed expiry structure is a possible follow-up if profiling calls
@@ -348,7 +361,7 @@ existing per-device tumbling windows and final-only streaming API. `push`
 returns finalized windows exactly once, and `end` flushes what remains. No
 provisional percentile events or rolling windows are introduced.
 
-### Calculation contract for the upcoming implementation
+### Implemented calculation contract
 
 - Add optional `p95?: number` to `WindowSummary`; both `summarize` and successful
   streaming summaries populate it for every nonempty window.
@@ -393,7 +406,7 @@ about 1.49 GiB versus about 12.59 MiB of 825-bucket counters. Exact storage can
 be smaller for windows with fewer readings than histogram buckets; the decision
 prioritizes predictable worst-case storage for busy windows.
 
-Add `streamLimits.maxHistogramBytes`, default 16 MiB, to cap total retained
+`streamLimits.maxHistogramBytes`, default 16 MiB, caps total retained
 counter-array bytes across open windows. It must be a positive safe integer;
 even a budget smaller than one histogram is valid but the first accepted window
 will fail. Before allocating a new histogram, close eligible windows and free
@@ -402,7 +415,7 @@ no additional array. Rejected readings allocate no histogram. Exceeding budget
 uses the existing terminal `StreamLimitError` behavior with limit name
 `maxHistogramBytes`, including release of all state. `end()` also frees arrays.
 
-An internal `retainedCounts().histogramBytes` diagnostic will sum actual retained
+An internal `retainedCounts().histogramBytes` diagnostic sums actual retained
 counter-array byte lengths for tests; it is not added to the public Stream API.
 The budget covers retained counter arrays, not process heap, runtime overhead,
 temporary allocation/GC delays, device-ID strings, or caller-owned output.
@@ -418,8 +431,8 @@ Batch summarization remains an in-memory batch API, without a total-memory cap.
    only for accepted windows, budget reuse after closure, quiet devices sharing
    the budget, and release on end or failure. Test existing metric fields
    independently so adding p95 does not obscure count/min/max/average regressions.
-4. Implement the percentile in a later commit. Preserve the original API call
-   signatures and the documented resource-limit qualifications.
+4. **Completed:** Implement the percentile in a separate commit, preserving the
+   original API call signatures and documented resource-limit qualifications.
 
 ### Percentile test layout
 
@@ -439,9 +452,19 @@ Batch summarization remains an in-memory batch API, without a total-memory cap.
   too once it exists. Existing memory checks continue to check device/sequence/
   window counts while the new suite checks histogram bytes separately.
 
-Tests use public entry points and the existing internal engine diagnostics.
-They do not import a nonexistent future histogram module or reproduce its bucket
-implementation. The numerical reference sorts small, known accepted datasets
-and selects the exact nearest-rank value independently. Internal utility and
-counter-overflow checks can accompany the implementation once those utility
-boundaries exist; no overflow protection is claimed to be verified yet.
+The percentile suites use public entry points and the internal engine diagnostics.
+Their numerical reference sorts small, known accepted datasets and selects the
+exact nearest-rank value independently. `test/histogram.test.ts` accompanies the
+implementation with one focused test per utility: configuration snapshots,
+bucket updates, and percentile selection, including counts near the safe-integer
+limit. The aggregation utility test seeds a full counter directly to verify the
+overflow guard without processing trillions of readings.
+
+`src/histogram.ts` is shared by batch and stream aggregation. Histogram counters
+update on acceptance; p95 is calculated only at finalization. The rank uses
+`count - floor(count / 20)`, equivalent to `ceil(0.95 * count)` without rounding
+a large multiplication. Counts cannot grow beyond `Number.MAX_SAFE_INTEGER`:
+an attempted extra reading throws before aggregate/histogram mutation. In the
+stream, an aggregation allocation or precision error is terminal and clears
+retained state. Public function signatures remain unchanged; the new configuration
+and result fields are additive. No dependencies or non-erasable TypeScript were added.

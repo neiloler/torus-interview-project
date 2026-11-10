@@ -172,3 +172,18 @@ transcript remains a final-submission task; this brief does not replace it.
 - The resulting suite has 84 tests: 65 existing cases pass and 19 new cases fail
   because the planned percentile behavior and histogram budget do not exist yet.
   Production source files and types remain unchanged in this test-only step.
+
+## Percentile implementation
+
+- The user requested implementing p95 against the committed tests.
+- Added shared histogram configuration, counter updates, and nearest-rank
+  midpoint selection. Batch and stream summaries now include p95, using 825
+  buckets by default and clamping estimates to observed values.
+- Enforced the configurable global histogram-byte budget before allocation.
+  Closing windows releases capacity before a new window needs it; end or terminal
+  failure clears retained state. Internal diagnostics sum actual array bytes.
+- Added one focused test per histogram utility and extended the aggregation
+  test to verify count-overflow protection before any state mutation.
+- All 87 tests pass, including all 19 previously failing percentile cases.
+  The sample CLI succeeds and prints p95. Updated NOTES with implementation,
+  validation, complexity, and the limits of the retained-memory guarantee.

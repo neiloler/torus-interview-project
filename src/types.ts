@@ -16,10 +16,11 @@ export type Reading = {
   value: number | null;
 };
 
-/** Per-stream limits on retained entries, not a process-wide byte budget. */
+/** Per-stream retained-state limits, not a process-wide byte budget. */
 export type StreamLimits = {
   maxDevices: number;
   maxRetainedSequences: number;
+  maxHistogramBytes: number;
 };
 
 export type Config = {
@@ -34,6 +35,8 @@ export type Config = {
   gapMs: number;
   /** Inclusive bounds for a valid `value`. */
   validRange: { min: number; max: number };
+  /** Equal-width percentile buckets (1..65536); defaults to 825. */
+  p95BucketCount?: number;
   /** Optional streaming-only limits; omitted fields use conservative defaults. */
   streamLimits?: Partial<StreamLimits>;
 };
@@ -47,6 +50,8 @@ export type WindowSummary = {
   min: number;
   max: number;
   avg: number;
+  /** Approximate nearest-rank p95; histogram midpoint clamped to observed bounds. */
+  p95?: number;
 };
 
 /** A period in which a device sent no accepted readings. */
